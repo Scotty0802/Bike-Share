@@ -3,46 +3,66 @@ library(tidymodels)
 library(vroom)
 library(ggplot2)
 library(dplyr)
+library(patchwork)
 
-train <- vroom("C:/Users/riley/Desktop/Fall 2025/Stat 348/data/bike-sharing-demand/train.csv")
+train<- vroom("C:/Users/riley/Desktop/Fall 2025/Stat 348/data/bike-sharing-demand/train.csv")
 test <- vroom("C:/Users/riley/Desktop/Fall 2025/Stat 348/data/bike-sharing-demand/test.csv")
 View(train)
 View(test)
 
 
 train <- train |>
-  mutate(weather = as.factor(weather),
-         season = as.factor(season),
-         workingday = as.factor(workingday),
-         holiday = as.factor(holiday))
+  mutate(workingday = as.factor(workingday),
+         holiday = as.factor(holiday)) |>
+  mutate(weather = factor(weather, 
+                          levels = c("1","2","3","4"),
+                          labels = c("Clear to Cloudy","Very Cloudy","Percipitation","Heavy Percipitation"))) |>
+  mutate(season = factor(season,
+                         levels = c("1","2","3","4"),
+                         labels = c("Spring","Summer","Fall","Winter")))
 
 colSums(is.na(train))
 colSums(is.na(test))
 
 #Train Plot
-ggplot() +
-  geom_histogram(data = train, aes(x = temp, fill = "temp"), 
-                 binwidth = 1, alpha = 0.8, color = "black") +
-  geom_histogram(data = train, aes(x = atemp, fill = "atemp"), 
-                 binwidth = 1, alpha = 0.3, color = "black") +
-  scale_fill_manual(values = c("temp" = "grey", "atemp" = "red")) +
-  labs(title = "Overlay of Temerature and Air Temperature Histograms",
-       x = "Temperature",
-       y = "Frequency",
-       fill = "Variable") +
-  theme_minimal()
+##
+GSeas <- ggplot(train, aes(x = factor(season), y = count, fill = factor(weather))) +
+  geom_bar(stat = "identity", alpha = 0.85) +
+  theme_minimal() +
+  labs(
+    x = "Season",
+    y = "Total Rentals",
+    fill = "Weather Condition",
+    title = "Total Rentals by Season and Weather"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-ggplot(train, aes(x = weather, fill = weather)) +
-  geom_bar(alpha = 0.8, color = "black")
+GWeather <- ggplot(train, aes(x = factor(weather), y = count, fill = factor(weather))) +
+  geom_bar(stat = "identity", alpha = 0.85) +
+  theme_minimal() +
+  labs(
+    x = "Season",
+    y = "Total Rentals",
+    fill = "Weather Condition",
+    title = "Total Rentals by Season and Weather"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-ggplot(train, aes(y = humidity)) + 
-  geom_boxplot(fill = "lightgreen")
 
+GDate <- ggplot(data = train, aes(x = datetime, y = count)) + 
+  geom_smooth(se = FALSE) +
+  theme_minimal()+
+  labs(x = "Date", y = "Count of Rentals", title = "Rentals by Date")
 
+Gtemp <- ggplot(data = train) +
+  geom_smooth(aes(x = datetime, y = temp, color = "Actual Temperature"), se = FALSE) +
+  geom_smooth(aes(x = datetime, y = atemp, color = "Feels Like Temperature"), se = FALSE) +
+  scale_color_manual(
+    name = "Type of Temperature",
+    values = c("Actual Temperature" = "red", "Feels Like Temperature" = "darkblue")
+  ) +
+  theme_minimal() +
+  labs(x = "Date", y = "Degrees in Celsius", title = "Temperature by Date") +
+  theme(legend.title = element_text(face = "bold"))
 
-#Test Plot
-ggplot(test, aes(x = temperature)) + 
-  geom_histogram(binwidth = 1, fill = "skyblue", color = "black")
-
-ggplot(test, aes(y = humidity)) + 
-  geom_boxplot(fill = "lightgreen")
+(Gtemp + GWeather)/(GDate + GSeas)

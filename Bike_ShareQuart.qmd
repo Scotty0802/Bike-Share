@@ -1,0 +1,83 @@
+---
+title: "Bike_Share"
+format: pdf
+editor: visual
+---
+
+## Set up
+
+```{r}
+#| output: false
+#| message: false
+library(tidyverse)
+library(tidymodels)
+library(vroom)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+```
+
+## Import
+
+```{r}
+#| output: false
+#| message: false
+
+train<- vroom("C:/Users/riley/Desktop/Fall 2025/Stat 348/data/bike-sharing-demand/train.csv")
+test <- vroom("C:/Users/riley/Desktop/Fall 2025/Stat 348/data/bike-sharing-demand/test.csv")
+```
+
+## Clean
+
+```{r}
+train <- train |>
+  #mutate(workingday = as.factor(workingday),
+   #      holiday = as.factor(holiday)) |>
+  #mutate(weather = factor(weather), 
+  #                         levels = c("1","2","3","4"),
+  #                         labels = c("Clear to Cloudy","Very Cloudy","Percipitation","Heavy Percipitation"))) |>
+  # mutate(season = factor(season,
+  #                        levels = c("1","2","3","4"),
+  #                        labels = c("Spring","Summer","Fall","Winter"))) |>
+  select(-casual, -registered)|>
+  mutate(count = log(count))
+```
+
+## Recipe
+
+```{r}
+bike_recipe <- recipe(count~., data=train) |>
+step_mutate(weather = ifelse(weather == 4, 3, weather)) |> 
+step_mutate(weather = factor(weather)) %>%
+step_date(datetime, features="dow") %>% # gets day of week
+step_time(datetime, features="hour") %>% #create time variable
+step_dummy(all_nominal_predictors()) %>%
+step_rm(datetime) %>% 
+step_zv(all_predictors()) #removes zero-variance predictors9
+
+prepped_recipe <- prep(bike_recipe)
+```
+
+## Model Making
+
+```{r}
+lin_model <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  set_mode("regression")
+```
+
+## Workflow
+
+```{r}
+bike_workflow <- workflow() %>%
+add_recipe(bike_recipe) %>%
+add_model(lin_model) %>%
+fit(data=train)
+```
+
+## Predictions
+
+```{r}
+lin_preds <- predict(bike_workflow, new_data = test)
+```

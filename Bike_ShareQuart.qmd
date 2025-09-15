@@ -44,6 +44,14 @@ train <- train |>
   mutate(count = log(count))
 ```
 
+## Model Making
+
+```{r}
+lin_model <- linear_reg() %>% 
+  set_engine("lm") %>% 
+  set_mode("regression")
+```
+
 ## Recipe
 
 ```{r}
@@ -54,17 +62,16 @@ step_date(datetime, features="dow") %>% # gets day of week
 step_time(datetime, features="hour") %>% #create time variable
 step_dummy(all_nominal_predictors()) %>%
 step_rm(datetime) %>% 
-step_zv(all_predictors()) #removes zero-variance predictors9
-
+step_zv(all_predictors())|> #removes zero-variance predictors9
+step_lincomb(all_predictors())
 prepped_recipe <- prep(bike_recipe)
 ```
 
-## Model Making
+## Baking (Optional if you are using a workflow)
 
 ```{r}
-lin_model <- linear_reg() %>% 
-  set_engine("lm") %>% 
-  set_mode("regression")
+train_processed <- bake(prepped_recipe, new_data = train)
+test_processed  <- bake(prepped_recipe, new_data = test) 
 ```
 
 ## Workflow
@@ -79,5 +86,23 @@ fit(data=train)
 ## Predictions
 
 ```{r}
-lin_preds <- predict(bike_workflow, new_data = test)
+test_preds <- predict(bike_workflow, new_data = test)
+test_preds <- test_preds |>
+  mutate(.pred = exp(.pred))
+```
+
+## Kaggle Submission
+
+```{r}
+kaggle_submission <- test_preds %>%
+bind_cols(., test) %>% 
+  select(datetime, .pred) |>
+  rename(count=.pred) %>%  
+  mutate(count=pmax(0, count)) %>% 
+  mutate(datetime=as.character(format(datetime)))
+
+## Write out the file9
+vroom_write(x = kaggle_submission, 
+            file = "~/GitHub/Stat 348/Bike-Share/Kaggle_Submission.csv", 
+            delim = ",")
 ```

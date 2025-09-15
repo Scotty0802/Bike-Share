@@ -47,9 +47,8 @@ train <- train |>
 ## Model Making
 
 ```{r}
-lin_model <- linear_reg() %>% 
-  set_engine("lm") %>% 
-  set_mode("regression")
+lin_model <- linear_reg(penalty=0, mixture=0) |>
+set_engine("glmnet")
 ```
 
 ## Recipe
@@ -63,7 +62,8 @@ step_time(datetime, features="hour") %>% #create time variable
 step_dummy(all_nominal_predictors()) %>%
 step_rm(datetime) %>% 
 step_zv(all_predictors())|> #removes zero-variance predictors9
-step_lincomb(all_predictors())
+step_lincomb(all_predictors())|>
+step_normalize(all_numeric_predictors())
 prepped_recipe <- prep(bike_recipe)
 ```
 

@@ -15,7 +15,7 @@ library(vroom)
 library(ggplot2)
 library(dplyr)
 library(patchwork)
-
+library(glmnet)
 ```
 
 ## Import
@@ -47,7 +47,9 @@ train <- train |>
 ## Model Making
 
 ```{r}
-lin_model <- linear_reg(penalty=0, mixture=0) |>
+#lin_model 
+
+preg_model <- linear_reg(penalty=tune(),mixture=tune()) %>% 
 set_engine("glmnet")
 ```
 
@@ -77,16 +79,51 @@ test_processed  <- bake(prepped_recipe, new_data = test)
 ## Workflow
 
 ```{r}
-bike_workflow <- workflow() %>%
+preg_wf <- workflow() %>%
 add_recipe(bike_recipe) %>%
-add_model(lin_model) %>%
-fit(data=train)
+add_model(preg_model)
 ```
+
+## Tuning
+```{r}
+## Grid of values to tune over13
+grid_of_tuning_params <- grid_regular(penalty(), mixture(), levels = 10) ## L^2 total tuning possibilities
+
+## Split data for CV
+folds <- vfold_cv(train, v = 5, repeats = 1)
+
+## Run the CV
+CV_results <- preg_wf %>%
+tune_grid(resamples=folds,grid=grid_of_tuning_params,metrics=metric_set(rmse, mae)) #Or leave metrics NULL
+
+## Plot Results (example)
+collect_metrics(CV_results) %>% # Gathers metrics into DF
+filter(.metric=="rmse") %>%
+ggplot(data=., aes(x=penalty, y=mean, color=factor(mixture))) +
+geom_line()
+
+## Find Best Tuning Parameters
+bestTune <- CV_results %>%
+select_best(metric="rmse")
+
+## Finalize the Workflow & fit it
+final_wf <- preg_wf %>%
+finalize_workflow(bestTune) %>%
+fit(data=train)
+
+
+
+```
+
 
 ## Predictions
 
 ```{r}
-test_preds <- predict(bike_workflow, new_data = test)
+## Predict
+#final_wf %>%
+#predict(new_data = test)
+
+test_preds <- predict(final_wf, new_data = test)
 test_preds <- test_preds |>
   mutate(.pred = exp(.pred))
 ```

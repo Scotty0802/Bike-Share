@@ -16,6 +16,7 @@ library(ggplot2)
 library(dplyr)
 library(patchwork)
 library(glmnet)
+library(rpart)
 ```
 
 ## Import
@@ -47,10 +48,14 @@ train <- train |>
 ## Model Making
 
 ```{r}
-#lin_model 
+#Penalized Model
+pen_model <- linear_reg(penalty=tune(),mixture=tune()) %>% set_engine("glmnet")
 
-preg_model <- linear_reg(penalty=tune(),mixture=tune()) %>% 
-set_engine("glmnet")
+#Tree Model
+tree_model <- decision_tree(tree_depth = tune(),cost_complexity = tune(), 
+                            min_n=tune()) %>% 
+  set_engine("rpart") %>% 
+  set_mode("regression")
 ```
 
 ## Recipe
@@ -72,49 +77,76 @@ prepped_recipe <- prep(bike_recipe)
 ## Baking (Optional if you are using a workflow)
 
 ```{r}
-train_processed <- bake(prepped_recipe, new_data = train)
-test_processed  <- bake(prepped_recipe, new_data = test) 
+#train_processed <- bake(prepped_recipe, new_data = train)
+#test_processed  <- bake(prepped_recipe, new_data = test) 
 ```
 
 ## Workflow
 
 ```{r}
-preg_wf <- workflow() %>%
+pen_wf <- workflow() %>%
 add_recipe(bike_recipe) %>%
-add_model(preg_model)
+add_model(pen_model)
+
+tree_wf <- workflow() %>%
+add_recipe(bike_recipe) %>%
+add_model(tree_model)
 ```
 
 ## Tuning
+
 ```{r}
 ## Grid of values to tune over13
-grid_of_tuning_params <- grid_regular(penalty(), mixture(), levels = 10) ## L^2 total tuning possibilities
+pen_grid_params <- grid_regular(penalty(), mixture(), levels = 10) ## L^2 total tuning possibilities
+
+tree_grid <- grid_regular(
+  tree_depth(range = c(1, 10)),
+  cost_complexity(),
+  min_n(),
+  levels = 5   # number of values per parameter
+)
 
 ## Split data for CV
 folds <- vfold_cv(train, v = 5, repeats = 1)
 
 ## Run the CV
-CV_results <- preg_wf %>%
-tune_grid(resamples=folds,grid=grid_of_tuning_params,metrics=metric_set(rmse, mae)) #Or leave metrics NULL
+CV_pen <- pen_wf %>%
+tune_grid(resamples=folds,grid=pen_grid_params,metrics=metric_set(rmse, mae)) #Or leave metrics NULL
+
+tune_tree <- tune_grid(
+  tree_wf,
+  resamples = folds,
+  grid = tree_grid,
+  metrics = metric_set(rmse, rsq) # regression metrics
+)
 
 ## Plot Results (example)
-collect_metrics(CV_results) %>% # Gathers metrics into DF
+collect_metrics(CV_pen) %>% # Gathers metrics into DF
 filter(.metric=="rmse") %>%
 ggplot(data=., aes(x=penalty, y=mean, color=factor(mixture))) +
 geom_line()
 
+collect_metrics(tune_tree) %>% # Gathers metrics into DF
+filter(.metric=="rmse") %>%
+ggplot(data=., aes(x = tree_depth, y = mean, color = factor(min_n))) +
+geom_line() 
+
 ## Find Best Tuning Parameters
-bestTune <- CV_results %>%
+bestTune <- CV_pen %>%
 select_best(metric="rmse")
 
+besttree <- tune_tree %>%
+select_best(metric="rmse")
 ## Finalize the Workflow & fit it
-final_wf <- preg_wf %>%
+final_wf <- pen_wf %>%
 finalize_workflow(bestTune) %>%
 fit(data=train)
 
-
+final_wf_tree <- tree_wf %>%
+finalize_workflow(besttree) %>%
+fit(data=train)
 
 ```
-
 
 ## Predictions
 
@@ -123,23 +155,36 @@ fit(data=train)
 #final_wf %>%
 #predict(new_data = test)
 
-test_preds <- predict(final_wf, new_data = test)
-test_preds <- test_preds |>
+test_preds_pen <- predict(final_wf, new_data = test)
+test_preds_pen <- test_preds_pen |>
+  mutate(.pred = exp(.pred))
+
+test_preds_tree <- predict(final_wf_tree, new_data = test)
+test_preds_tree <- test_preds_tree |>
   mutate(.pred = exp(.pred))
 ```
 
 ## Kaggle Submission
 
 ```{r}
-kaggle_submission <- test_preds %>%
+kaggle_submission_pen <- test_preds_pen %>%
 bind_cols(., test) %>% 
   select(datetime, .pred) |>
   rename(count=.pred) %>%  
   mutate(count=pmax(0, count)) %>% 
   mutate(datetime=as.character(format(datetime)))
 
+kaggle_submission_tree <- test_preds_tree %>%
+bind_cols(., test) %>% 
+  select(datetime, .pred) |>
+  rename(count=.pred) %>%  
+  mutate(count=pmax(0, count)) %>% 
+  mutate(datetime=as.character(format(datetime)))
 ## Write out the file9
 vroom_write(x = kaggle_submission, 
+            file = "~/GitHub/Stat 348/Bike-Share/Kaggle_Submission.csv", 
+            delim = ",")
+vroom_write(x = kaggle_submission_tree, 
             file = "~/GitHub/Stat 348/Bike-Share/Kaggle_Submission.csv", 
             delim = ",")
 ```

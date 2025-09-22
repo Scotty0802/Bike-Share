@@ -48,11 +48,8 @@ train <- train |>
 ## Model Making
 
 ```{r}
-#Penalized Model
-pen_model <- linear_reg(penalty=tune(),mixture=tune()) %>% set_engine("glmnet")
-
 #Tree Model
-tree_model <- decision_tree(tree_depth = tune(),cost_complexity = tune(), 
+model <- decision_tree(tree_depth = tune(),cost_complexity = tune(), 
                             min_n=tune()) %>% 
   set_engine("rpart") %>% 
   set_mode("regression")
@@ -84,22 +81,16 @@ prepped_recipe <- prep(bike_recipe)
 ## Workflow
 
 ```{r}
-pen_wf <- workflow() %>%
+wf <- workflow() %>%
 add_recipe(bike_recipe) %>%
-add_model(pen_model)
-
-tree_wf <- workflow() %>%
-add_recipe(bike_recipe) %>%
-add_model(tree_model)
+add_model(model)
 ```
 
 ## Tuning
 
 ```{r}
 ## Grid of values to tune over13
-pen_grid_params <- grid_regular(penalty(), mixture(), levels = 10) ## L^2 total tuning possibilities
-
-tree_grid <- grid_regular(
+tune_grid <- grid_regular(
   tree_depth(range = c(1, 10)),
   cost_complexity(),
   min_n(),
@@ -107,43 +98,27 @@ tree_grid <- grid_regular(
 )
 
 ## Split data for CV
-folds <- vfold_cv(train, v = 5, repeats = 1)
+folds <- vfold_cv(train, v = 2, repeats = 1)
 
 ## Run the CV
-CV_pen <- pen_wf %>%
-tune_grid(resamples=folds,grid=pen_grid_params,metrics=metric_set(rmse, mae)) #Or leave metrics NULL
-
-tune_tree <- tune_grid(
-  tree_wf,
+param_tune <- tune_grid(
+  wf,
   resamples = folds,
-  grid = tree_grid,
-  metrics = metric_set(rmse, rsq) # regression metrics
-)
+  grid = tune_grid,
+  metrics = metric_set(rmse, rsq))
 
 ## Plot Results (example)
-collect_metrics(CV_pen) %>% # Gathers metrics into DF
-filter(.metric=="rmse") %>%
-ggplot(data=., aes(x=penalty, y=mean, color=factor(mixture))) +
-geom_line()
-
-collect_metrics(tune_tree) %>% # Gathers metrics into DF
+collect_metrics(param_tune) %>% # Gathers metrics into DF
 filter(.metric=="rmse") %>%
 ggplot(data=., aes(x = tree_depth, y = mean, color = factor(min_n))) +
 geom_line() 
 
 ## Find Best Tuning Parameters
-bestTune <- CV_pen %>%
-select_best(metric="rmse")
+best_param <- select_best(param_tune, metric="rmse")
 
-besttree <- tune_tree %>%
-select_best(metric="rmse")
 ## Finalize the Workflow & fit it
-final_wf <- pen_wf %>%
-finalize_workflow(bestTune) %>%
-fit(data=train)
-
-final_wf_tree <- tree_wf %>%
-finalize_workflow(besttree) %>%
+final_wf <- wf %>%
+finalize_workflow(best_param) %>%
 fit(data=train)
 
 ```
@@ -155,26 +130,16 @@ fit(data=train)
 #final_wf %>%
 #predict(new_data = test)
 
-test_preds_pen <- predict(final_wf, new_data = test)
-test_preds_pen <- test_preds_pen |>
-  mutate(.pred = exp(.pred))
-
-test_preds_tree <- predict(final_wf_tree, new_data = test)
-test_preds_tree <- test_preds_tree |>
+test_preds <- predict(final_wf, new_data = test)
+test_preds <- test_preds |>
   mutate(.pred = exp(.pred))
 ```
 
 ## Kaggle Submission
 
 ```{r}
-kaggle_submission_pen <- test_preds_pen %>%
-bind_cols(., test) %>% 
-  select(datetime, .pred) |>
-  rename(count=.pred) %>%  
-  mutate(count=pmax(0, count)) %>% 
-  mutate(datetime=as.character(format(datetime)))
 
-kaggle_submission_tree <- test_preds_tree %>%
+kaggle_submission <- test_preds %>%
 bind_cols(., test) %>% 
   select(datetime, .pred) |>
   rename(count=.pred) %>%  

@@ -17,6 +17,7 @@ library(dplyr)
 library(patchwork)
 library(glmnet)
 library(rpart)
+
 ```
 
 ## Import
@@ -49,10 +50,11 @@ train <- train |>
 
 ```{r}
 #Tree Model
-model <- decision_tree(tree_depth = tune(),cost_complexity = tune(), 
-                            min_n=tune()) %>% 
-  set_engine("rpart") %>% 
-  set_mode("regression")
+model <- rand_forest(mtry = tune(),
+min_n=tune(),
+trees=500) %>% #Type of model6
+set_engine("ranger") %>% # What R function to use7
+set_mode("regression")
 ```
 
 ## Recipe
@@ -74,8 +76,8 @@ prepped_recipe <- prep(bike_recipe)
 ## Baking (Optional if you are using a workflow)
 
 ```{r}
-#train_processed <- bake(prepped_recipe, new_data = train)
-#test_processed  <- bake(prepped_recipe, new_data = test) 
+train_processed <- bake(prepped_recipe, new_data = train)
+test_processed  <- bake(prepped_recipe, new_data = test) 
 ```
 
 ## Workflow
@@ -91,14 +93,13 @@ add_model(model)
 ```{r}
 ## Grid of values to tune over13
 tune_grid <- grid_regular(
-  tree_depth(range = c(1, 10)),
-  cost_complexity(),
-  min_n(),
-  levels = 5   # number of values per parameter
+        mtry(range = c(1, ncol(train) - 1)),  # predictors only, exclude response
+        min_n(),
+        levels = 6
 )
 
 ## Split data for CV
-folds <- vfold_cv(train, v = 2, repeats = 1)
+folds <- vfold_cv(train, v = 6, repeats = 1)
 
 ## Run the CV
 param_tune <- tune_grid(
@@ -110,8 +111,13 @@ param_tune <- tune_grid(
 ## Plot Results (example)
 collect_metrics(param_tune) %>% # Gathers metrics into DF
 filter(.metric=="rmse") %>%
-ggplot(data=., aes(x = tree_depth, y = mean, color = factor(min_n))) +
-geom_line() 
+ggplot(aes(x = mtry, y = mean, color = factor(min_n))) +
+geom_line() +
+  labs(
+    x = "Number of Predictors (mtry)",
+    y = "RMSE",
+    color = "min_n"
+  )
 
 ## Find Best Tuning Parameters
 best_param <- select_best(param_tune, metric="rmse")
@@ -147,9 +153,6 @@ bind_cols(., test) %>%
   mutate(datetime=as.character(format(datetime)))
 ## Write out the file9
 vroom_write(x = kaggle_submission, 
-            file = "~/GitHub/Stat 348/Bike-Share/Kaggle_Submission.csv", 
-            delim = ",")
-vroom_write(x = kaggle_submission_tree, 
             file = "~/GitHub/Stat 348/Bike-Share/Kaggle_Submission.csv", 
             delim = ",")
 ```

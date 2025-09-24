@@ -17,6 +17,8 @@ library(dplyr)
 library(patchwork)
 library(glmnet)
 library(rpart)
+library(bonsai)
+library(lightgbm)
 
 ```
 
@@ -50,11 +52,10 @@ train <- train |>
 
 ```{r}
 #Tree Model
-model <- rand_forest(mtry = tune(),
-min_n=tune(),
-trees=500) %>% #Type of model6
-set_engine("ranger") %>% # What R function to use7
+model <- bart(trees=tune()) %>% # BART figures out depth and learn_rate9
+set_engine("dbarts") %>% # might need to install10
 set_mode("regression")
+
 ```
 
 ## Recipe
@@ -93,13 +94,12 @@ add_model(model)
 ```{r}
 ## Grid of values to tune over13
 tune_grid <- grid_regular(
-        mtry(range = c(1, ncol(train) - 1)),  # predictors only, exclude response
-        min_n(),
-        levels = 4
+  trees(),
+  levels = 5   # or however many points you want
 )
 
 ## Split data for CV
-folds <- vfold_cv(train, v = 5, repeats = 1)
+folds <- vfold_cv(train, v = 2)
 
 ## Run the CV
 param_tune <- tune_grid(
@@ -111,13 +111,11 @@ param_tune <- tune_grid(
 ## Plot Results (example)
 collect_metrics(param_tune) %>% # Gathers metrics into DF
 filter(.metric=="rmse") %>%
-ggplot(aes(x = mtry, y = mean, color = factor(min_n))) +
+ggplot(aes(x = trees, y = mean)) +
 geom_line() +
-   labs(
-+     x = "Number of Predictors (mtry)",
-+     y = "RMSE",
-+     color = "min_n"
-+   )
+geom_point() +
+labs(x = "Number of Trees",
+y = "RMSE")
 
 ## Find Best Tuning Parameters
 best_param <- select_best(param_tune, metric="rmse")

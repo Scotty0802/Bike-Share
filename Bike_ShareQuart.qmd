@@ -95,11 +95,11 @@ add_model(model)
 tune_grid <- grid_regular(
         mtry(range = c(1, ncol(train) - 1)),  # predictors only, exclude response
         min_n(),
-        levels = 6
+        levels = 4
 )
 
 ## Split data for CV
-folds <- vfold_cv(train, v = 6, repeats = 1)
+folds <- vfold_cv(train, v = 5, repeats = 1)
 
 ## Run the CV
 param_tune <- tune_grid(
@@ -113,11 +113,11 @@ collect_metrics(param_tune) %>% # Gathers metrics into DF
 filter(.metric=="rmse") %>%
 ggplot(aes(x = mtry, y = mean, color = factor(min_n))) +
 geom_line() +
-  labs(
-    x = "Number of Predictors (mtry)",
-    y = "RMSE",
-    color = "min_n"
-  )
+   labs(
++     x = "Number of Predictors (mtry)",
++     y = "RMSE",
++     color = "min_n"
++   )
 
 ## Find Best Tuning Parameters
 best_param <- select_best(param_tune, metric="rmse")

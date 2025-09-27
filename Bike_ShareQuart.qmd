@@ -19,7 +19,7 @@ library(glmnet)
 library(rpart)
 library(bonsai)
 library(lightgbm)
-
+library(agua)
 ```
 
 ## Import
@@ -51,9 +51,14 @@ train <- train |>
 ## Model Making
 
 ```{r}
-#Tree Model
-model <- bart(trees=tune()) %>% # BART figures out depth and learn_rate9
-set_engine("dbarts") %>% # might need to install10
+#Stacked Model
+Sys.setenv(JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-25.0.0.36-hotspot")
+
+
+h2o::h2o.init()
+
+model<- auto_ml() %>%
+set_engine("h2o", max_models=8) %>%
 set_mode("regression")
 
 ```
@@ -84,46 +89,47 @@ test_processed  <- bake(prepped_recipe, new_data = test)
 ## Workflow
 
 ```{r}
-wf <- workflow() %>%
+final_wf <- workflow() %>%
 add_recipe(bike_recipe) %>%
-add_model(model)
+add_model(model) %>%
+fit(data=train)
 ```
 
 ## Tuning
 
 ```{r}
 ## Grid of values to tune over13
-tune_grid <- grid_regular(
-  trees(),
-  levels = 5   # or however many points you want
-)
+#tune_grid <- grid_regular(
+ # trees(),
+  #levels = 5   # or however many points you want
+#)
 
 ## Split data for CV
-folds <- vfold_cv(train, v = 2)
+#folds <- vfold_cv(train, v = 2)
 
 ## Run the CV
-param_tune <- tune_grid(
-  wf,
-  resamples = folds,
-  grid = tune_grid,
-  metrics = metric_set(rmse, rsq))
+#param_tune <- tune_grid(
+ # wf,
+ # resamples = folds,
+  #grid = tune_grid,
+#  metrics = metric_set(rmse, rsq))
 
 ## Plot Results (example)
-collect_metrics(param_tune) %>% # Gathers metrics into DF
-filter(.metric=="rmse") %>%
-ggplot(aes(x = trees, y = mean)) +
-geom_line() +
-geom_point() +
-labs(x = "Number of Trees",
-y = "RMSE")
-
-## Find Best Tuning Parameters
-best_param <- select_best(param_tune, metric="rmse")
-
-## Finalize the Workflow & fit it
-final_wf <- wf %>%
-finalize_workflow(best_param) %>%
-fit(data=train)
+# #collect_metrics(param_tune) %>% # Gathers metrics into DF
+# filter(.metric=="rmse") %>%
+# ggplot(aes(x = trees, y = mean)) +
+# geom_line() +
+# geom_point() +
+# labs(x = "Number of Trees",
+# y = "RMSE")
+# 
+# ## Find Best Tuning Parameters
+# best_param <- select_best(param_tune, metric="rmse")
+# 
+# ## Finalize the Workflow & fit it
+# final_wf <- wf %>%
+# finalize_workflow(best_param) %>%
+# fit(data=train)
 
 ```
 

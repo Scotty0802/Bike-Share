@@ -57,8 +57,8 @@ Sys.setenv(JAVA_HOME="C:/Program Files/Eclipse Adoptium/jdk-25.0.0.36-hotspot")
 
 h2o::h2o.init()
 
-model<- auto_ml() %>%
-set_engine("h2o", max_models=8) %>%
+model<- auto_ml() |>
+set_engine("h2o", max_models=8) |>
 set_mode("regression")
 
 ```
@@ -66,17 +66,28 @@ set_mode("regression")
 ## Recipe
 
 ```{r}
-bike_recipe <- recipe(count~., data=train) |>
-step_mutate(weather = ifelse(weather == 4, 3, weather)) |> 
-step_mutate(weather = factor(weather)) %>%
-step_date(datetime, features="dow") %>% # gets day of week
-step_time(datetime, features="hour") %>% #create time variable
-step_dummy(all_nominal_predictors()) %>%
-step_rm(datetime) %>% 
-step_zv(all_predictors())|> #removes zero-variance predictors9
-step_lincomb(all_predictors())|>
-step_normalize(all_numeric_predictors())
+bike_recipe <- recipe(count ~ ., data = train) %>%
+  step_mutate(weather = ifelse(weather == 4, 3, weather)) %>%
+  step_mutate(weather = factor(weather)) %>%
+  step_date(datetime, features = c("month", "year")) %>%   # keep month/year if useful
+  # create hour_of_week: Monday as start (0..167)
+  step_mutate(
+    hour_of_week = (as.integer(format(as.POSIXct(datetime, tz = "America/Denver"), "%u")) - 1) * 24 +
+                   as.integer(format(as.POSIXct(datetime, tz = "America/Denver"), "%H"))
+  ) %>%
+  # cyclical transforms (period = 168 hours)
+  step_mutate(
+    hour_of_week_sin = sin(2 * pi * hour_of_week / 168),
+    hour_of_week_cos = cos(2 * pi * hour_of_week / 168)
+  ) %>%
+  step_rm(hour_of_week, datetime) %>%                      # drop raw datetime and intermediate
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_lincomb(all_predictors()) %>%
+  step_normalize(all_numeric_predictors())
+
 prepped_recipe <- prep(bike_recipe)
+
 ```
 
 ## Baking (Optional if you are using a workflow)
@@ -89,9 +100,9 @@ test_processed  <- bake(prepped_recipe, new_data = test)
 ## Workflow
 
 ```{r}
-final_wf <- workflow() %>%
-add_recipe(bike_recipe) %>%
-add_model(model) %>%
+final_wf <- workflow() |>
+add_recipe(bike_recipe) |>
+add_model(model) |>
 fit(data=train)
 ```
 
@@ -115,8 +126,8 @@ fit(data=train)
 #  metrics = metric_set(rmse, rsq))
 
 ## Plot Results (example)
-# #collect_metrics(param_tune) %>% # Gathers metrics into DF
-# filter(.metric=="rmse") %>%
+# #collect_metrics(param_tune) |> # Gathers metrics into DF
+# filter(.metric=="rmse") |>
 # ggplot(aes(x = trees, y = mean)) +
 # geom_line() +
 # geom_point() +
@@ -127,8 +138,8 @@ fit(data=train)
 # best_param <- select_best(param_tune, metric="rmse")
 # 
 # ## Finalize the Workflow & fit it
-# final_wf <- wf %>%
-# finalize_workflow(best_param) %>%
+# final_wf <- wf |>
+# finalize_workflow(best_param) |>
 # fit(data=train)
 
 ```
@@ -137,7 +148,7 @@ fit(data=train)
 
 ```{r}
 ## Predict
-#final_wf %>%
+#final_wf |>
 #predict(new_data = test)
 
 test_preds <- predict(final_wf, new_data = test)
@@ -151,7 +162,7 @@ test_preds <- test_preds |>
 
 kaggle_submission <- test_preds %>%
 bind_cols(., test) %>% 
-  select(datetime, .pred) |>
+  select(datetime, .pred) %>%
   rename(count=.pred) %>%  
   mutate(count=pmax(0, count)) %>% 
   mutate(datetime=as.character(format(datetime)))
